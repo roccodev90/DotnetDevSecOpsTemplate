@@ -1,15 +1,18 @@
+using IndustrialSecureApi.Infrastructure;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using System.Linq;
 
 namespace IndustrialSecureApi.Infrastructure;
 
-public class ApplicationDbContext : DbContext
+public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>
 {
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : base(options)
     {
     }
 
-    // Proprietà per tracciare l'utente corrente (per audit)
     public string? CurrentUserId { get; set; }
 
     // Aggiungeremo i DbSet dopo aver creato i modelli
@@ -19,10 +22,8 @@ public class ApplicationDbContext : DbContext
         base.OnModelCreating(modelBuilder);
 
         // Configurazione indici e altro verrà aggiunta qui
-        // Per ora lasciamo vuoto, lo completeremo quando avremo i modelli
     }
 
-    // QUI INSERISCI SaveChangesAsync
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         // Soft Delete: marca come eliminati invece di rimuovere
@@ -32,8 +33,7 @@ public class ApplicationDbContext : DbContext
 
         foreach (var entry in deletedEntries)
         {
-            // Controlla se l'entità ha una proprietà "IsDeleted" o "DeletedAt"
-            // Per ora lasciamo vuoto, lo completeremo quando avremo i modelli
+            // Completeremo quando avremo i modelli
         }
 
         // Audit Trail: traccia modifiche
@@ -43,7 +43,7 @@ public class ApplicationDbContext : DbContext
                        e.State == EntityState.Deleted)
             .ToList();
 
-        // Per ora lasciamo vuoto, lo completeremo quando avremo AuditEntry
+        // Completeremo quando avremo AuditEntry
 
         return await base.SaveChangesAsync(cancellationToken);
     }
