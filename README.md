@@ -4,7 +4,7 @@ Template .NET 8 con pipeline DevSecOps integrata (CI/CD, SAST, SCA, aggiornament
 
 ## Badges
 
-[![CI](https://github.com/roccodev90/DotnetDevSecOpsTemplate/actions/workflows/ci.yml/badge.svg?branch=main)]
+[[CI](https://github.com/roccodev90/DotnetDevSecOpsTemplate/actions/workflows/ci.yml/badge.svg?branch=main)]
 (https://github.com/roccodev90/DotnetDevSecOpsTemplate/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/roccodev90/DotnetDevSecOpsTemplate/actions/workflows/codeql.yml/badge.svg?branch=main)]
 (https://github.com/roccodev90/DotnetDevSecOpsTemplate/actions/workflows/codeql.yml)
@@ -14,7 +14,7 @@ Template .NET 8 con pipeline DevSecOps integrata (CI/CD, SAST, SCA, aggiornament
 
 ---
 
-## ?? Contenuto
+## Contenuto
 - **CI** ? build e test automatici
 - **CodeQL** ? analisi statica (SAST)
 - **Trivy** ? scansione sicurezza (SCA + container + IaC)
