@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # Aggiorna pacchetti NuGet (.NET)
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Aggiorna GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
