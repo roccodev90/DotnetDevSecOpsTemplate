@@ -15,7 +15,7 @@ Template .NET 8 con pipeline DevSecOps integrata (CI/CD, SAST, SCA, aggiornament
 ---
 
 ## Contenuto
-- **CI** ? build e test automatici
-- **CodeQL** ? analisi statica (SAST)
-- **Trivy** ? scansione sicurezza (SCA + container + IaC)
-- **Dependabot** ? aggiornamento automatico dipendenze
+- **CI** build e test automatici
+- **CodeQL** analisi statica (SAST)
+- **Trivy** scansione sicurezza (SCA + container + IaC)
+- **Dependabot** aggiornamento automatico dipendenze
