@@ -7,23 +7,29 @@ on:
     branches: [ "main" ]
 
 jobs:
-  trivy:
+  trivy-fs:
+    name: Trivy FS scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Scansione file e dipendenze (SCA + IaC)
       - name: Trivy FS scan (repository)
         uses: aquasecurity/trivy-action@0.20.0
         with:
-          scan-type: fs # FS scan ? analizza il repository (codice, pacchetti NuGet, Dockerfile, YAML) per vulnerabilità.
+          scan-type: fs
           ignore-unfixed: true
           format: table
           exit-code: '1'
           vulnerability-type: 'os,library'
 
-      # Build immagine Docker
+  trivy-image:
+    name: Trivy Docker image scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -33,13 +39,13 @@ jobs:
           context: ./src/Api
           file: ./src/Api/Dockerfile
           platforms: linux/amd64
+          tags: api:latest
           outputs: type=docker,dest=/tmp/api-image.tar
 
       - name: Load image
         run: docker load -i /tmp/api-image.tar
 
-      # Scansione immagine Docker
-      - name: Trivy Image scan #Image scan ? costruisce l’immagine Docker e la scansiona.
+      - name: Trivy Image scan
         uses: aquasecurity/trivy-action@0.20.0
         with:
           image-ref: api:latest
