@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -6,6 +6,7 @@
   <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   <ImplicitUsings>enable</ImplicitUsings>
   <LangVersion>12</LangVersion>
+    <UserSecretsId>9209ffc3-502c-4422-87a3-01e99e5cb3d9</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

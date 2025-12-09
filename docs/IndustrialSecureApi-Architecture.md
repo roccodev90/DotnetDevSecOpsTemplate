@@ -1,7 +1,7 @@
 # Industrial Secure API - Mappa di Navigazione del Codice
 
-**Versione:** 0.7.0  
-**Stato:** Logging & Audit Implemented  
+**Versione:** 0.8.0  
+**Stato:** Testing Infrastructure Implemented  
 **Ultimo aggiornamento:** Dicembre 2024
 
 ---
@@ -42,7 +42,19 @@ src/IndustrialSecureApi/
 │   ├── Middleware/             # Middleware custom
 │   └── Seeders/                 # Inizializzazione dati
 │
-└── program.cs                   # Entry point e configurazione
+├── program.cs                   # Entry point e configurazione
+└── ProgramMarker.cs            # Classe marker per WebApplicationFactory
+
+tests/IndustrialSecureApi.Tests/
+├── Unit/                        # Test unitari
+│   ├── Validators/              # Test validatori FluentValidation
+│   ├── Services/                # Test servizi (JWT, TOTP)
+│   └── Policies/                # Test policy (futuro)
+│
+└── Integration/                 # Test di integrazione
+    ├── ApiTests.cs             # Test endpoint API
+    └── TestHelpers/             # Helper per test
+        └── CustomWebApplicationFactory.cs  # Factory per test in-memory
 ```
 
 ---
@@ -805,6 +817,13 @@ Il metodo `SaveChangesAsync` è sovrascritto per tracciare automaticamente tutte
 3. Registrazione middleware → `program.cs` (cerca `UseMiddleware<ErrorLoggingMiddleware>`)
 4. File di log → cartella `logs/` nella root del progetto
 
+### Voglio vedere come funzionano i test
+
+1. Test unitari → `tests/IndustrialSecureApi.Tests/Unit/`
+2. Test integrazione → `tests/IndustrialSecureApi.Tests/Integration/`
+3. Factory per test → `tests/IndustrialSecureApi.Tests/Integration/TestHelpers/CustomWebApplicationFactory.cs`
+4. Marker class → `src/IndustrialSecureApi/ProgramMarker.cs`
+
 ---
 
 ## Architettura a Livelli
@@ -892,6 +911,148 @@ Il metodo `SaveChangesAsync` è sovrascritto per tracciare automaticamente tutte
 
 ---
 
+## Testing Infrastructure
+
+### Struttura dei Test
+
+Il progetto include una suite completa di test organizzata in due categorie principali:
+
+#### Test Unitari (`tests/IndustrialSecureApi.Tests/Unit/`)
+
+Test isolati che verificano singoli componenti senza dipendenze esterne:
+
+- **Validators**: Test dei validatori FluentValidation
+  - `CreateSensorReadingDtoValidatorTests`: Verifica regole di validazione per sensor readings
+  - Testa limiti di valore (-50 a 200), validazione tag, timestamp
+
+- **Services**: Test dei servizi di business logic
+  - `JwtServiceTests`: Verifica generazione e validazione token JWT
+  - `TotpServiceTests`: Verifica generazione secret, validazione codici, QR code
+
+- **Policies**: Test delle policy di autorizzazione (futuro)
+
+#### Test di Integrazione (`tests/IndustrialSecureApi.Tests/Integration/`)
+
+Test end-to-end che verificano il comportamento completo dell'API:
+
+- **ApiTests**: Test degli endpoint API
+  - Testa flussi completi: richiesta HTTP → validazione → business logic → risposta
+  - Usa `CustomWebApplicationFactory` per creare un'applicazione in-memory
+
+- **TestHelpers**: Utility per facilitare i test
+  - `CustomWebApplicationFactory`: Factory per creare istanze dell'applicazione per i test
+  - Configura database in-memory invece di PostgreSQL
+  - Mantiene tutti i servizi configurati (Identity, JWT, Authorization, etc.)
+
+### Flussi di Esecuzione dei Test
+
+#### Esecuzione Test Unitari
+
+1. **Setup**: Crea istanza del componente da testare (validator, service)
+2. **Arrange**: Prepara dati di input e configurazione
+3. **Act**: Esegue l'operazione da testare
+4. **Assert**: Verifica che il risultato sia quello atteso
+
+**Esempio - Test Validatore:**
+- Input: DTO con valore fuori range (-51)
+- Operazione: Chiama `validator.Validate(dto)`
+- Verifica: Risultato non valido, errore sulla proprietà `Value`
+
+#### Esecuzione Test di Integrazione
+
+1. **Setup**: `CustomWebApplicationFactory` crea un'istanza dell'applicazione
+   - Sostituisce PostgreSQL con database in-memory
+   - Mantiene tutti i servizi configurati (Identity, JWT, Authorization, etc.)
+   - Crea un `HttpClient` per fare richieste all'API
+
+2. **Arrange**: Prepara dati di test (DTO, headers, etc.)
+
+3. **Act**: Esegue richiesta HTTP reale all'endpoint
+   - La richiesta passa attraverso tutti i middleware (rate limiting, authentication, authorization)
+   - Viene eseguita la validazione FluentValidation
+   - Viene eseguita la business logic
+   - Viene generata la risposta HTTP
+
+4. **Assert**: Verifica status code, corpo risposta, headers
+
+**Esempio - Test Endpoint:**
+- Input: POST `/readings` con DTO valido
+- Operazione: Richiesta HTTP completa attraverso l'API
+- Verifica: Status code 201 Created (o 401 se manca autenticazione)
+
+### CustomWebApplicationFactory - Come Funziona
+
+Il `CustomWebApplicationFactory` è un helper fondamentale per i test di integrazione:
+
+1. **Eredita da `WebApplicationFactory<Program>`**: Usa il marker class `Program` per trovare l'applicazione
+
+2. **Override `ConfigureWebHost`**: Personalizza la configurazione per i test
+   - Rimuove il `DbContext` configurato per PostgreSQL
+   - Aggiunge un `DbContext` configurato per database in-memory
+   - Assicura che tutti i servizi necessari siano registrati (es. `AddAuthorization`)
+
+3. **Risultato**: Un'applicazione completa e funzionante, ma con database in-memory invece di PostgreSQL
+
+### Tecnologie Usate
+
+- **xUnit**: Framework di testing per .NET
+- **Microsoft.AspNetCore.Mvc.Testing**: Per creare istanze dell'applicazione per i test
+- **Microsoft.EntityFrameworkCore.InMemory**: Database in-memory per test di integrazione
+- **FluentValidation.TestHelper**: Helper per testare validatori FluentValidation
+
+### Esecuzione dei Test
+
+**Comando:**
+```bash
+dotnet test
+```
+
+**Output:**
+- Compilazione del progetto principale e del progetto di test
+- Esecuzione di tutti i test (unit + integration)
+- Report con risultati: passati, falliti, ignorati
+- Durata totale di esecuzione
+
+### Stato Attuale dei Test
+
+✅ **Test Unitari Implementati:**
+- Validatore `CreateSensorReadingDtoValidator` (test limite valore)
+- Servizio `JwtService` (generazione e validazione token)
+- Servizio `TotpService` (generazione secret, validazione codici, QR code)
+
+✅ **Test di Integrazione Implementati:**
+- Test endpoint `POST /readings` (richiede autenticazione per completare)
+
+⚠️ **Prossimi Passi per Test di Integrazione:**
+- Configurare autenticazione nei test (creare utente, generare JWT token)
+- Testare flussi completi con autenticazione
+- Testare scenari di errore (validazione fallita, rate limiting, etc.)
+
+### Percorsi di Navigazione - Testing
+
+#### Voglio vedere come funzionano i test unitari
+
+1. Test validatori → `tests/IndustrialSecureApi.Tests/Unit/Validators/`
+2. Test servizi → `tests/IndustrialSecureApi.Tests/Unit/Services/`
+3. Validatori testati → `src/IndustrialSecureApi/Features/*/Validators/`
+4. Servizi testati → `src/IndustrialSecureApi/Features/*/Services/`
+
+#### Voglio vedere come funzionano i test di integrazione
+
+1. Test endpoint → `tests/IndustrialSecureApi.Tests/Integration/ApiTests.cs`
+2. Factory per test → `tests/IndustrialSecureApi.Tests/Integration/TestHelpers/CustomWebApplicationFactory.cs`
+3. Endpoint testati → `src/IndustrialSecureApi/program.cs` (cerca endpoint `/readings`)
+4. Marker class → `src/IndustrialSecureApi/ProgramMarker.cs`
+
+#### Voglio aggiungere un nuovo test
+
+1. **Test unitario**: Crea file in `tests/IndustrialSecureApi.Tests/Unit/[Categoria]/`
+2. **Test integrazione**: Aggiungi metodo in `tests/IndustrialSecureApi.Tests/Integration/ApiTests.cs` o crea nuovo file
+3. **Usa `CustomWebApplicationFactory`**: Per test di integrazione, usa `IClassFixture<CustomWebApplicationFactory>`
+4. **Esegui**: `dotnet test` dalla root o dalla cartella del progetto di test
+
+---
+
 ## Prossimi Sviluppi
 
 ### Endpoint da Completare
@@ -916,7 +1077,14 @@ Il metodo `SaveChangesAsync` è sovrascritto per tracciare automaticamente tutte
 ### Validatori da Aggiungere
 - Validatori per altri DTO (RegisterDto, LoginDto, etc.)
 
+### Test da Completare
+- Test di integrazione con autenticazione (creare utente, generare JWT, testare endpoint protetti)
+- Test scenari di errore (validazione fallita, rate limiting, autorizzazione negata)
+- Test per tutti gli endpoint implementati
+- Test per middleware (error logging, rate limiting)
+- Test per audit trail (verificare che vengano creati record di audit)
+
 ---
 
 **Ultimo aggiornamento:** Dicembre 2024  
-**Versione:** 0.7.0 (Logging & Audit Implemented)
+**Versione:** 0.8.0 (Testing Infrastructure Implemented)

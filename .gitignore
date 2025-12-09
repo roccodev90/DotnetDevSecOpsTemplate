@@ -1,17 +1,45 @@
 # Visual Studio
+
 .vs/
+
 *.user
+
 *.suo
 
+
+
 # Build
+
 bin/
+
 obj/
 
+
+
 # Logs
+
 *.log
 
+logs/              # Cartella logs generata da Serilog
+
+
+
 # Test results
+
 TestResults/
 
+
+
+# User Secrets (opzionale, ma buona pratica documentarlo)
+
+# Nota: User Secrets sono salvati fuori dal progetto, ma è buona pratica
+# non committare appsettings.Development.json se contiene segreti
+appsettings.Development.json
+appsettings.json
+
+# Documentation
+docs/
+
 # Others
+
 *.DS_Store
