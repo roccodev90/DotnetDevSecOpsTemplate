@@ -1,14 +1,21 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
+using AspNetCoreRateLimit;
+
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
 using System.Text;
+using FluentValidation;
+using FluentValidation.AspNetCore;
 
 using IndustrialSecureApi.Infrastructure;
 using IndustrialSecureApi.Features.Auth;
+using IndustrialSecureApi.Features.Sensors;
 using IndustrialSecureApi.Features.Auth.Dtos;
+using IndustrialSecureApi.Features.Sensors.Dtos;
+using IndustrialSecureApi.Features.Sensors.Validators;
 using IndustrialSecureApi.Features.Auth.Services.Interfaces;
 using IndustrialSecureApi.Features.Auth.Services.Implementations;
 
@@ -17,6 +24,37 @@ var builder = WebApplication.CreateBuilder(args);
 // Database
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// FluentValidation
+builder.Services.AddValidatorsFromAssemblyContaining<CreateSensorReadingDtoValidator>();
+builder.Services.AddFluentValidationAutoValidation();
+builder.Services.AddFluentValidationClientsideAdapters();
+
+// Rate Limiting
+builder.Services.AddMemoryCache();
+builder.Services.Configure<IpRateLimitOptions>(options =>
+{
+    options.EnableEndpointRateLimiting = true;
+    options.StackBlockedRequests = false;
+    options.HttpStatusCode = 429;
+    options.RealIpHeader = "X-Real-IP";
+    options.ClientIdHeader = "X-ClientId";
+    options.GeneralRules = new List<RateLimitRule>
+    {
+        new RateLimitRule
+        {
+            Endpoint = "*",
+            Period = "1m",
+            Limit = 10
+        }
+    };
+});
+
+builder.Services.AddSingleton<IIpPolicyStore, MemoryCacheIpPolicyStore>();
+builder.Services.AddSingleton<IRateLimitCounterStore, MemoryCacheRateLimitCounterStore>();
+builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
+builder.Services.AddSingleton<IProcessingStrategy, AsyncKeyLockProcessingStrategy>();
+builder.Services.AddInMemoryRateLimiting();
 
 // Identity
 builder.Services.AddIdentity<ApplicationUser, IdentityRole<Guid>>(options =>
@@ -78,6 +116,9 @@ using (var scope = app.Services.CreateScope())
     await DataSeeder.SeedRolesAsync(scope.ServiceProvider);
 }
 
+// Rate Limiting Middleware 
+app.UseIpRateLimiting();
+
 // Middleware per autenticazione e autorizzazione
 app.UseAuthentication();
 app.UseAuthorization();
@@ -138,8 +179,23 @@ app.MapPost("/api/auth/verify-2fa", async (
 });
 
 // Endpoint protetti
-app.MapPost("/readings", () => Results.Ok("Reading created"))
-    .RequireAuthorization(policy => policy.RequireRole("Operator"));
+app.MapPost("/readings", async (
+    CreateSensorReadingDto dto,
+    ApplicationDbContext context) =>
+{
+    var reading = new SensorReading(
+        Id: Guid.NewGuid(),
+        Tag: dto.Tag,
+        Value: dto.Value,
+        Timestamp: dto.Timestamp
+    );
+
+    context.SensorReadings.Add(reading);
+    await context.SaveChangesAsync();
+
+    return Results.Created($"/readings/{reading.Id}", reading);
+})
+.RequireAuthorization(policy => policy.RequireRole("Operator"));
 
 app.MapDelete("/readings/{id}", (Guid id) => Results.Ok($"Reading {id} deleted"))
     .RequireAuthorization(policy => policy.RequireRole("Manager"));
