@@ -1,12 +1,14 @@
 name: Release
 
 on:
-  release:
-    types: [created]
+  push:
+    tags:
+      - 'v*.*.*' # es. v1.0.0
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -14,18 +16,15 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: 8.0.x
 
       - name: Restore
-        run: dotnet restore ./src/Api/Api.csproj
+        run: dotnet restore
 
-      - name: Build
-        run: dotnet build ./src/Api/Api.csproj --configuration Release --no-restore
+      - name: Pack NuGet
+        run: dotnet pack src/Api/Api.csproj -c Release -o ./nupkg
 
-      - name: Pack
-        run: dotnet pack ./src/Api/Api.csproj --configuration Release --no-build -o ./artifacts
-
-      - name: Publish to GitHub Packages
-        run: dotnet nuget push ./artifacts/*.nupkg --source "github" --api-key ${{ secrets.GITHUB_TOKEN }}
+      - name: Push to GitHub Packages
+        run: dotnet nuget push ./nupkg/*.nupkg --source "github" --api-key ${{ secrets.GITHUB_TOKEN }}
         env:
           NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,66 @@
+﻿## Architettura del progetto
+
+```mermaid
+flowchart TD
+    Entities[Entities] --> Repository[Repository]
+    Repository --> Services[Services]
+    Services --> Controller[Controller]
+    Controller --> API[API Endpoints]
+
+    subgraph DevSecOps Tools
+        CodeQL[CodeQL Analysis]
+        Trivy[Trivy Scan]
+        Coverage[Test Coverage]
+        Release[NuGet Release]
+    end
+
+    API --> CodeQL
+    API --> Trivy
+    API --> Coverage
+    API --> Release
+
+    
+---
+
+## Spiegazione del diagramma
+- **Entities** → definiscono i modelli e le entità di dominio  
+- **Repository** → gestiscono l’accesso ai dati (DB, storage)  
+- **Services** → contengono la logica di business  
+- **Controller** → espongono gli endpoint REST  
+- **API Endpoints** → sono il punto di ingresso per gli utenti/client  
+- **DevSecOps Tools** → ogni commit attiva CodeQL, Trivy, Coverage e Release per garantire sicurezza e qualità  
+
+---
+
+Con questo, il tuo README avrà un diagramma chiaro e leggibile direttamente su GitHub.  
+Vuoi che ti prepari anche il **diagramma della pipeline CI/CD** in Mermaid (Commit → CI → CodeQL → Trivy → Coverage → Release)?
+
+## Pipeline CI/CD
+
+flowchart LR
+    Commit[Commit] --> CI[CI Build & Test]
+    CI --> CodeQL[CodeQL Analysis]
+    CI --> Trivy[Trivy Security Scan]
+    CI --> Coverage[Test Coverage]
+    CI --> Release[NuGet Release]
+
+    subgraph GitHub Actions
+        CI
+        CodeQL
+        Trivy
+        Coverage
+        Release
+    end
+
+    
+---
+
+## Spiegazione del diagramma
+- **Commit** → ogni push o PR attiva la pipeline  
+- **CI Build & Test** → compila e lancia i test automatici  
+- **CodeQL Analysis** → analisi statica del codice per vulnerabilità  
+- **Trivy Security Scan** → scansione dipendenze e container per CVE critici  
+- **Test Coverage** → calcolo della copertura e generazione report  
+- **NuGet Release** → pubblicazione automatica del pacchetto su GitHub Packages  
+
+---

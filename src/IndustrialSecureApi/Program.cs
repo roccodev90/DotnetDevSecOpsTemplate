@@ -2,15 +2,15 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
 using AspNetCoreRateLimit;
-
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
 using System.Text;
 using FluentValidation;
 using FluentValidation.AspNetCore;
-
+using Serilog;
 using IndustrialSecureApi.Infrastructure;
+using IndustrialSecureApi.Infrastructure.Middleware;
 using IndustrialSecureApi.Features.Auth;
 using IndustrialSecureApi.Features.Sensors;
 using IndustrialSecureApi.Features.Auth.Dtos;
@@ -19,7 +19,26 @@ using IndustrialSecureApi.Features.Sensors.Validators;
 using IndustrialSecureApi.Features.Auth.Services.Interfaces;
 using IndustrialSecureApi.Features.Auth.Services.Implementations;
 
-var builder = WebApplication.CreateBuilder(args);
+// Configura Serilog prima di creare il builder
+Log.Logger = new LoggerConfiguration()
+    .WriteTo.Console()
+    .WriteTo.Seq("http://localhost:5341") // Opzionale: rimuovi se non usi Seq
+    .WriteTo.File(
+        new Serilog.Formatting.Json.JsonFormatter(),
+        "logs/app-.json",
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 7
+    )
+    .CreateLogger();
+
+try
+{
+    Log.Information("Avvio applicazione Industrial Secure API");
+
+    var builder = WebApplication.CreateBuilder(args);
+
+    // Usa Serilog invece del logger di default
+    builder.Host.UseSerilog();
 
 // Database
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -115,6 +134,9 @@ using (var scope = app.Services.CreateScope())
 {
     await DataSeeder.SeedRolesAsync(scope.ServiceProvider);
 }
+
+// Error Logging Middleware (deve essere prima di altri middleware)
+app.UseMiddleware<ErrorLoggingMiddleware>();
 
 // Rate Limiting Middleware 
 app.UseIpRateLimiting();
@@ -248,4 +270,16 @@ app.MapPost("/api/auth/refresh", async (
     });
 });
 
-app.Run();
+// Gestione errori e chiusura Serilog
+try
+{
+    app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Applicazione terminata inaspettatamente");
+}
+finally
+{
+    Log.CloseAndFlush();
+}
