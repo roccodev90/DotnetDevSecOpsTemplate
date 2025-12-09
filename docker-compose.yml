@@ -1,4 +1,29 @@
 services:
+  # Application
+  app:
+    build:
+      context: .
+      dockerfile: src/IndustrialSecureApi/Dockerfile
+    container_name: industrial-secure-api
+    ports:
+      - "8080:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=industrial_secure;Username=postgres;Password=postgres123
+      - Jwt__Key=YourSuperSecretKeyThatIsAtLeast32CharactersLong!
+      - Jwt__Issuer=IndustrialSecureAPI
+      - Jwt__Audience=IndustrialSecureAPI
+      - Serilog__WriteTo__1__Args__serverUrl=http://seq:5341
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      seq:
+        condition: service_started
+    restart: unless-stopped
+
+  # PostgreSQL Database
   postgres:
     image: postgres:16-alpine
     container_name: industrial-secure-postgres
@@ -16,7 +41,38 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+
+  # Redis for token blacklist
+  redis:
+    image: redis:7-alpine
+    container_name: industrial-secure-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Seq for structured logging
+  seq:
+    image: datalust/seq:latest
+    container_name: industrial-secure-seq
+    ports:
+      - "5341:5341"
+      - "5342:80"
+    environment:
+      - ACCEPT_EULA=Y
+    volumes:
+      - seq_data:/data
+    restart: unless-stopped
 
 volumes:
   postgres_data:
-
+  redis_data:
+  seq_data:

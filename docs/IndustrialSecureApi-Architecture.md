@@ -1,7 +1,7 @@
 # Industrial Secure API - Mappa di Navigazione del Codice
 
-**Versione:** 0.8.0  
-**Stato:** Testing Infrastructure Implemented  
+**Versione:** 0.9.0  
+**Stato:** Docker & Dependency Scanning Implemented  
 **Ultimo aggiornamento:** Dicembre 2024
 
 ---
@@ -43,7 +43,13 @@ src/IndustrialSecureApi/
 │   └── Seeders/                 # Inizializzazione dati
 │
 ├── program.cs                   # Entry point e configurazione
-└── ProgramMarker.cs            # Classe marker per WebApplicationFactory
+├── ProgramMarker.cs            # Classe marker per WebApplicationFactory
+└── Dockerfile                  # Multi-stage Docker build
+
+docker-compose.yml              # Orchestrazione servizi (app, postgres, redis, seq)
+
+scripts/
+└── audit.ps1                   # Script dependency scanning
 
 tests/IndustrialSecureApi.Tests/
 ├── Unit/                        # Test unitari
@@ -824,6 +830,19 @@ Il metodo `SaveChangesAsync` è sovrascritto per tracciare automaticamente tutte
 3. Factory per test → `tests/IndustrialSecureApi.Tests/Integration/TestHelpers/CustomWebApplicationFactory.cs`
 4. Marker class → `src/IndustrialSecureApi/ProgramMarker.cs`
 
+### Voglio vedere come funziona Docker
+
+1. Dockerfile → `src/IndustrialSecureApi/Dockerfile`
+2. docker-compose.yml → `docker-compose.yml` (root)
+3. Build immagine: `docker build -t industrial-secure-api -f src/IndustrialSecureApi/Dockerfile .`
+4. Avvia servizi: `docker-compose up -d`
+
+### Voglio eseguire lo scan delle vulnerabilità
+
+1. Script audit → `scripts/audit.ps1`
+2. Esegui: `.\scripts\audit.ps1` (PowerShell) o `./scripts/audit.sh` (Bash)
+3. Verifica manuale: `dotnet list package --vulnerable --include-transitive`
+
 ---
 
 ## Architettura a Livelli
@@ -1053,6 +1072,178 @@ dotnet test
 
 ---
 
+## Containerizzazione e Orchestrazione
+
+### Dockerfile Multi-Stage
+
+Il progetto include un Dockerfile ottimizzato con build multi-stage per ridurre la dimensione dell'immagine finale.
+
+**Struttura:**
+- **Stage 1 (Build)**: Usa `mcr.microsoft.com/dotnet/sdk:8.0` per compilare l'applicazione
+- **Stage 2 (Publish)**: Pubblica l'applicazione in modalità Release
+- **Stage 3 (Runtime)**: Usa `mcr.microsoft.com/dotnet/aspnet:8.0-alpine` (immagine più piccola)
+
+**Caratteristiche di Sicurezza:**
+- User non-root con UID 1000 (`appuser`)
+- Ownership corretta dei file
+- Porta 8080 esposta
+- Variabili d'ambiente configurate per produzione
+
+**Percorso:** `src/IndustrialSecureApi/Dockerfile`
+
+### Docker Compose
+
+Il progetto include un `docker-compose.yml` completo che orchestra tutti i servizi necessari:
+
+**Servizi Configurati:**
+
+1. **app** (Industrial Secure API)
+   - Build dal Dockerfile
+   - Porta 8080 esposta
+   - Dipende da postgres, redis, seq
+   - Variabili d'ambiente per configurazione
+
+2. **postgres** (PostgreSQL Database)
+   - Immagine: `postgres:16-alpine`
+   - Porta 5433 esposta (per evitare conflitti con PostgreSQL locale)
+   - Health check configurato
+   - Volume persistente per dati
+
+3. **redis** (Token Blacklist)
+   - Immagine: `redis:7-alpine`
+   - Porta 6379 esposta
+   - Persistenza abilitata (AOF)
+   - Health check configurato
+
+4. **seq** (Structured Logging)
+   - Immagine: `datalust/seq:latest`
+   - Porte 5341 (API) e 5342 (UI) esposte
+   - Volume persistente per dati
+
+**Caratteristiche:**
+- Health checks su postgres e redis
+- Restart policy `unless-stopped`
+- Volumes persistenti per tutti i dati
+- Dipendenze tra servizi configurate correttamente
+
+**Percorso:** `docker-compose.yml` (root del repository)
+
+### Come Usare Docker Compose
+
+**Avviare tutti i servizi:**
+```bash
+docker-compose up -d
+```
+
+**Vedere i log:**
+```bash
+docker-compose logs -f app
+```
+
+**Fermare i servizi:**
+```bash
+docker-compose down
+```
+
+**Fermare e rimuovere volumi:**
+```bash
+docker-compose down -v
+```
+
+**Rebuild dell'applicazione:**
+```bash
+docker-compose up -d --build app
+```
+
+### Accesso ai Servizi
+
+- **API**: `http://localhost:8080`
+- **PostgreSQL**: `localhost:5433`
+- **Redis**: `localhost:6379`
+- **Seq UI**: `http://localhost:5342`
+- **Seq API**: `http://localhost:5341`
+
+---
+
+## Dependency Scanning e Security
+
+### Script di Audit (`scripts/audit.ps1`)
+
+Il progetto include uno script PowerShell per il scanning automatico delle vulnerabilità nei pacchetti NuGet.
+
+**Funzionalità:**
+- Esegue `dotnet list package --vulnerable --include-transitive`
+- Controlla vulnerabilità HIGH e CRITICAL
+- **Fallisce il build** se trova vulnerabilità HIGH o CRITICAL (exit code 1)
+- Avvisa (ma non blocca) per vulnerabilità Moderate o Low
+
+**Come Funziona:**
+1. Esegue il comando di scanning
+2. Analizza l'output per trovare "HIGH" o "CRITICAL"
+3. Se trova HIGH/CRITICAL: stampa errore e esce con codice 1 (fallisce build)
+4. Se trova altre vulnerabilità: avvisa ma continua (exit code 0)
+5. Se non trova vulnerabilità: successo (exit code 0)
+
+**Esecuzione:**
+```powershell
+.\scripts\audit.ps1
+```
+
+**Integrazione CI/CD:**
+Lo script può essere integrato in pipeline CI/CD per bloccare automaticamente il build se vengono trovate vulnerabilità critiche.
+
+**Percorso:** `scripts/audit.ps1`
+
+### Vulnerabilità Risolte
+
+**Vulnerabilità HIGH Risolte:**
+- ✅ `Npgsql 8.0.0` → CVE-2024-32655 (aggiornato a 8.0.3+)
+- ✅ `Microsoft.Extensions.Caching.Memory 8.0.0` → DoS vulnerability (aggiornato a 8.0.2+)
+
+**Vulnerabilità Moderate Rimanenti (Opzionali):**
+- ⚠️ `Microsoft.IdentityModel.JsonWebTokens 7.0.3` → GHSA-59j7-ghrg-fj52
+- ⚠️ `System.IdentityModel.Tokens.Jwt 7.0.3` → GHSA-59j7-ghrg-fj52
+
+Le vulnerabilità Moderate non bloccano il build ma è consigliato risolverle aggiornando `Microsoft.AspNetCore.Authentication.JwtBearer` a 8.0.11+.
+
+### Verifica Vulnerabilità
+
+**Comando per verificare vulnerabilità:**
+```bash
+dotnet list package --vulnerable --include-transitive
+```
+
+**Comando per vedere pacchetti obsoleti:**
+```bash
+dotnet list package --outdated --include-transitive
+```
+
+### Percorsi di Navigazione - Docker & Security
+
+#### Voglio vedere come funziona il Dockerfile
+
+1. Dockerfile → `src/IndustrialSecureApi/Dockerfile`
+2. Multi-stage build: Stage 1 (build), Stage 2 (publish), Stage 3 (runtime)
+3. User non-root: cerca `adduser -D -u 1000`
+4. Configurazione → variabili ENV e EXPOSE
+
+#### Voglio vedere come funziona docker-compose
+
+1. docker-compose.yml → `docker-compose.yml` (root)
+2. Servizi: app, postgres, redis, seq
+3. Dipendenze: cerca `depends_on`
+4. Health checks: cerca `healthcheck`
+5. Volumes: cerca sezione `volumes:`
+
+#### Voglio eseguire lo script di audit
+
+1. Script → `scripts/audit.ps1`
+2. Esegui: `.\scripts\audit.ps1`
+3. Output: mostra vulnerabilità HIGH/CRITICAL o Moderate
+4. Build fallisce se trova HIGH/CRITICAL
+
+---
+
 ## Prossimi Sviluppi
 
 ### Endpoint da Completare
@@ -1084,7 +1275,21 @@ dotnet test
 - Test per middleware (error logging, rate limiting)
 - Test per audit trail (verificare che vengano creati record di audit)
 
+### Docker & Infrastructure da Completare
+- ✅ Dockerfile multi-stage implementato
+- ✅ docker-compose.yml con tutti i servizi
+- ✅ Script dependency scanning implementato
+- ⚠️ Integrare script audit in CI/CD pipeline
+- ⚠️ Configurare Redis per token blacklist (implementazione)
+- ⚠️ Testare build e deploy con Docker
+
+### Security da Completare
+- ✅ Vulnerabilità HIGH risolte
+- ⚠️ Risolvere vulnerabilità Moderate (JWT packages)
+- ⚠️ Implementare token blacklist con Redis
+- ⚠️ Configurare secrets management per produzione (Azure Key Vault, etc.)
+
 ---
 
 **Ultimo aggiornamento:** Dicembre 2024  
-**Versione:** 0.8.0 (Testing Infrastructure Implemented)
+**Versione:** 0.9.0 (Docker & Dependency Scanning Implemented)
