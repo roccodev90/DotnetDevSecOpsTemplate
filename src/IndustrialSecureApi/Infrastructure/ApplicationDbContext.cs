@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Linq;
 using IndustrialSecureApi.Infrastructure;
 using IndustrialSecureApi.Features.Sensors;
+using System.Text.Json;
 
 namespace IndustrialSecureApi.Infrastructure;
 
@@ -16,7 +17,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityR
 
     public string? CurrentUserId { get; set; }
 
-    // DbSet per le entit�
+    // DbSet per le entità
     public DbSet<SensorReading> SensorReadings => Set<SensorReading>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
@@ -48,27 +49,117 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityR
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        // Soft Delete: marca come eliminati invece di rimuovere
+        // ============================================
+        // BLOCCO 1: SOFT DELETE
+        // ============================================
+        // Trova tutte le entità che stanno per essere eliminate
         var deletedEntries = ChangeTracker.Entries()
             .Where(e => e.State == EntityState.Deleted)
             .ToList();
 
         foreach (var entry in deletedEntries)
         {
-            // Completeremo quando avremo i modelli con propriet� IsDeleted o DeletedAt
-            // Per ora lasciamo vuoto
+            // Per ora lasciamo vuoto perché SensorReading è un record immutabile
+            // In futuro, se convertiamo in class, potremmo fare:
+            // entry.Property("IsDeleted").CurrentValue = true;
+            // entry.State = EntityState.Modified;
         }
 
-        // Audit Trail: traccia modifiche
+        // ============================================
+        // BLOCCO 2: AUDIT TRAIL - Prepara le entry da tracciare
+        // ============================================
+        // Trova tutte le entità modificate (aggiunte, modificate, eliminate)
         var modifiedEntries = ChangeTracker.Entries()
             .Where(e => e.State == EntityState.Added ||
                        e.State == EntityState.Modified ||
                        e.State == EntityState.Deleted)
             .ToList();
 
-        // Completeremo quando avremo AuditEntry completamente configurato
-        // Per ora lasciamo vuoto
+        // Lista per raccogliere gli AuditEntry da creare
+        var auditEntries = new List<AuditEntry>();
 
+        // ============================================
+        // BLOCCO 3: AUDIT TRAIL - Itera su ogni entry modificata
+        // ============================================
+        foreach (var entry in modifiedEntries)
+        {
+            // Salta se è già un AuditEntry (evita loop infiniti)
+            if (entry.Entity is AuditEntry)
+            {
+                continue;
+            }
+
+            // Salta le entità Identity (AspNetUsers, AspNetRoles, etc.)
+            // per evitare di loggare ogni cambio password, ruolo, etc.
+            var entityType = entry.Entity.GetType();
+            if (entityType.Namespace?.Contains("Identity") == true)
+            {
+                continue;
+            }
+
+            // ============================================
+            // BLOCCO 4: AUDIT TRAIL - Prepara OldValues
+            // ============================================
+            string oldValues = string.Empty;
+
+            // Se l'entità è stata modificata, cattura i valori originali
+            if (entry.State == EntityState.Modified)
+            {
+                var originalValues = new Dictionary<string, object?>();
+                foreach (var property in entry.OriginalValues.Properties)
+                {
+                    originalValues[property.Name] = entry.OriginalValues[property];
+                }
+                oldValues = JsonSerializer.Serialize(originalValues);
+            }
+
+            // ============================================
+            // BLOCCO 5: AUDIT TRAIL - Prepara NewValues
+            // ============================================
+            string newValues = string.Empty;
+
+            // Se l'entità non è stata eliminata, cattura i valori attuali
+            if (entry.State != EntityState.Deleted)
+            {
+                var currentValues = new Dictionary<string, object?>();
+                foreach (var property in entry.CurrentValues.Properties)
+                {
+                    currentValues[property.Name] = entry.CurrentValues[property];
+                }
+                newValues = JsonSerializer.Serialize(currentValues);
+            }
+
+            // ============================================
+            // BLOCCO 6: AUDIT TRAIL - Crea AuditEntry
+            // ============================================
+            var auditEntry = new AuditEntry(
+                Id: Guid.NewGuid(),
+                User: CurrentUserId ?? "System",  // Usa CurrentUserId se disponibile, altrimenti "System"
+                Action: entry.State.ToString(),   // "Added", "Modified", "Deleted"
+                Entity: entityType.Name,           // Nome della classe (es. "SensorReading")
+                When: DateTime.UtcNow,            // Timestamp UTC
+                OldValues: oldValues,             // JSON con valori originali
+                NewValues: newValues              // JSON con valori nuovi
+            );
+
+            // Aggiungi alla lista
+            auditEntries.Add(auditEntry);
+        }
+
+        // ============================================
+        // BLOCCO 7: AUDIT TRAIL - Aggiungi AuditEntry al ChangeTracker
+        // ============================================
+        // Aggiungi tutti gli AuditEntry al ChangeTracker
+        // così verranno salvati insieme alle altre modifiche
+        foreach (var auditEntry in auditEntries)
+        {
+            Entry(auditEntry).State = EntityState.Added;
+        }
+
+        // ============================================
+        // BLOCCO 8: Salva tutte le modifiche
+        // ============================================
+        // Salva tutto: modifiche originali + AuditEntry creati
         return await base.SaveChangesAsync(cancellationToken);
     }
 }
