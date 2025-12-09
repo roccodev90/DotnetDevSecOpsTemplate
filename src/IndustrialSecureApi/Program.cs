@@ -1,8 +1,16 @@
 ﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.Security.Claims;
+using System.Text;
+
 using IndustrialSecureApi.Infrastructure;
 using IndustrialSecureApi.Features.Auth;
-using Microsoft.AspNetCore.Http;
+using IndustrialSecureApi.Features.Auth.Dtos;
+using IndustrialSecureApi.Features.Auth.Services.Interfaces;
+using IndustrialSecureApi.Features.Auth.Services.Implementations;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,6 +38,34 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole<Guid>>(options =>
 })
 .AddEntityFrameworkStores<ApplicationDbContext>()
 .AddDefaultTokenProviders();
+
+// JWT Configuration
+var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("JWT Key not configured");
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? throw new InvalidOperationException("JWT Issuer not configured");
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? throw new InvalidOperationException("JWT Audience not configured");
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+        ValidateIssuer = true,
+        ValidIssuer = jwtIssuer,
+        ValidateAudience = true,
+        ValidAudience = jwtAudience,
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.Zero
+    };
+});
+
+// JWT Service
+builder.Services.AddScoped<IJwtService, JwtService>();
 
 // TOTP Service
 builder.Services.AddScoped<ITotpService, TotpService>();
@@ -107,5 +143,53 @@ app.MapPost("/readings", () => Results.Ok("Reading created"))
 
 app.MapDelete("/readings/{id}", (Guid id) => Results.Ok($"Reading {id} deleted"))
     .RequireAuthorization(policy => policy.RequireRole("Manager"));
+
+// Endpoint per refresh token
+app.MapPost("/api/auth/refresh", async (
+    HttpRequest request,
+    IJwtService jwtService,
+    UserManager<ApplicationUser> userManager) =>
+{
+    var body = await request.ReadFromJsonAsync<RefreshTokenDto>();
+    if (body == null || string.IsNullOrEmpty(body.RefreshToken))
+        return Results.BadRequest("Refresh token richiesto");
+
+    // Verifica refresh token nel database
+    var refreshToken = await jwtService.GetRefreshTokenAsync(body.RefreshToken);
+    if (refreshToken == null)
+        return Results.Unauthorized();
+
+    // Revoca il vecchio refresh token
+    await jwtService.RevokeRefreshTokenAsync(body.RefreshToken);
+
+    // Genera nuovo access token
+    var user = refreshToken.User;
+    var claims = new List<Claim>
+    {
+        new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+        new Claim(ClaimTypes.Name, user.UserName ?? ""),
+        new Claim(ClaimTypes.Email, user.Email ?? "")
+    };
+
+    // Aggiungi ruoli
+    var roles = await userManager.GetRolesAsync(user);
+    foreach (var role in roles)
+    {
+        claims.Add(new Claim(ClaimTypes.Role, role));
+    }
+
+    var newAccessToken = jwtService.GenerateAccessToken(claims);
+
+    // Genera nuovo refresh token (7 giorni)
+    var newRefreshToken = jwtService.GenerateRefreshToken();
+    await jwtService.SaveRefreshTokenAsync(user.Id, newRefreshToken, DateTime.UtcNow.AddDays(7));
+
+    return Results.Ok(new
+    {
+        AccessToken = newAccessToken,
+        RefreshToken = newRefreshToken,
+        ExpiresIn = 900 // 15 minuti in secondi
+    });
+});
 
 app.Run();

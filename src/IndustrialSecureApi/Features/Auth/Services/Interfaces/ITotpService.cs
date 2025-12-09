@@ -1,4 +1,4 @@
-namespace IndustrialSecureApi.Features.Auth;
+namespace IndustrialSecureApi.Features.Auth.Services.Interfaces;
 
 public interface ITotpService
 {

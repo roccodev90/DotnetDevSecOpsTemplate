@@ -1,7 +1,8 @@
 using OtpNet;
 using QRCoder;
+using IndustrialSecureApi.Features.Auth.Services.Interfaces;
 
-namespace IndustrialSecureApi.Features.Auth;
+namespace IndustrialSecureApi.Features.Auth.Services.Implementations;
 
 public class TotpService : ITotpService
 {
