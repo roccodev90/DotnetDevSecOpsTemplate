@@ -36,8 +36,8 @@ jobs:
       - name: Build image
         uses: docker/build-push-action@v6
         with:
-          context: ./src/Api
-          file: ./src/Api/Dockerfile
+          context: .
+          file: ./src/IndustrialSecureApi/Dockerfile
           platforms: linux/amd64
           tags: api:latest
           outputs: type=docker,dest=/tmp/api-image.tar

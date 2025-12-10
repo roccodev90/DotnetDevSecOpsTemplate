@@ -1,14 +1,18 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
-using AspNetCoreRateLimit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
+using AspNetCoreRateLimit;
+
+
 using System.Security.Claims;
 using System.Text;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using Serilog;
+
 using IndustrialSecureApi.Infrastructure;
 using IndustrialSecureApi.Infrastructure.Middleware;
 using IndustrialSecureApi.Features.Auth;
@@ -38,6 +42,52 @@ try
     Log.Information("Avvio applicazione Industrial Secure API");
 
     var builder = WebApplication.CreateBuilder(args);
+
+    // Swagger/OpenAPI
+    builder.Services.AddEndpointsApiExplorer();
+    builder.Services.AddSwaggerGen(c =>
+    {
+        c.SwaggerDoc("v1", new OpenApiInfo
+        {
+            Title = "Industrial Secure API",
+            Version = "v1",
+            Description = "REST API per la gestione di sensori industriali con autenticazione 2FA, RBAC e audit trail immutabile",
+            Contact = new OpenApiContact
+            {
+                Name = "DevOps Team"
+            }
+        });
+
+        // Include XML comments
+        var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+        var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+        c.IncludeXmlComments(xmlPath);
+
+        // JWT Bearer Authentication
+        c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+        {
+            Description = "JWT Authorization header usando lo schema Bearer. Inserisci 'Bearer' [spazio] e poi il token.",
+            Name = "Authorization",
+            In = ParameterLocation.Header,
+            Type = SecuritySchemeType.ApiKey,
+            Scheme = "Bearer"
+        });
+
+        c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+    });
 
     // Usa Serilog invece del logger di default
     builder.Host.UseSerilog();
@@ -202,7 +252,6 @@ try
         return Results.Ok(new { Message = "Codice TOTP valido" });
     });
 
-    // Endpoint protetti
     app.MapPost("/readings", async (
         CreateSensorReadingDto dto,
         ApplicationDbContext context) =>
@@ -219,7 +268,15 @@ try
 
         return Results.Created($"/readings/{reading.Id}", reading);
     })
-    .RequireAuthorization(policy => policy.RequireRole("Operator"));
+    .WithName("CreateReading")
+    .WithTags("Sensors")
+    .WithSummary("Crea una nuova lettura di sensore")
+    .WithDescription("Crea una nuova lettura di sensore con validazione input. Richiede ruolo Operator o Manager.")
+    .Produces<SensorReading>(StatusCodes.Status201Created)
+    .Produces(StatusCodes.Status400BadRequest)
+    .Produces(StatusCodes.Status401Unauthorized)
+    .Produces(StatusCodes.Status403Forbidden)
+    .RequireAuthorization(policy => policy.RequireRole("Operator", "Manager"));
 
     app.MapDelete("/readings/{id}", (Guid id) => Results.Ok($"Reading {id} deleted"))
         .RequireAuthorization(policy => policy.RequireRole("Manager"));
@@ -272,6 +329,17 @@ try
         });
     });
 
+    // Swagger UI (solo in Development)
+    if (app.Environment.IsDevelopment())
+    {
+        app.UseSwagger();
+        app.UseSwaggerUI(c =>
+        {
+            c.SwaggerEndpoint("/swagger/v1/swagger.json", "Industrial Secure API v1");
+            c.RoutePrefix = string.Empty; // Swagger UI alla root
+        });
+    }
+
     // Gestione errori e chiusura Serilog
     try
     {
@@ -285,13 +353,13 @@ try
     {
         Log.CloseAndFlush();
     }
-} 
+}
 catch (Exception ex)
 {
     Log.Fatal(ex, "Errore durante la configurazione dell'applicazione");
     throw; // Rilancia l'eccezione per far fallire l'avvio
 }
-    finally
-    {
-        Log.CloseAndFlush();
-    }
+finally
+{
+    Log.CloseAndFlush();
+}

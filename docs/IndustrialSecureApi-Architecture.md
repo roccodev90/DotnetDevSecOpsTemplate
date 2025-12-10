@@ -1,7 +1,7 @@
 # Industrial Secure API - Mappa di Navigazione del Codice
 
-**Versione:** 0.9.0  
-**Stato:** Docker & Dependency Scanning Implemented  
+**Versione:** 1.2.0  
+**Stato:** Release Workflow Implemented  
 **Ultimo aggiornamento:** Dicembre 2024
 
 ---
@@ -48,6 +48,16 @@ src/IndustrialSecureApi/
 
 docker-compose.yml              # Orchestrazione servizi (app, postgres, redis, seq)
 
+infra/                          # Infrastructure as Code (Terraform)
+├── main.tf                     # Provider e configurazione base
+├── keyvault.tf                 # Azure Key Vault resource
+├── secrets.tf                  # Secrets nel Key Vault
+├── managed-identity.tf         # Managed Identity e permissions
+├── variables.tf                # Variabili Terraform
+├── outputs.tf                  # Output values
+├── terraform.tfvars.example    # Esempio di configurazione
+└── README-IaC.md               # Documentazione IaC
+
 scripts/
 └── audit.ps1                   # Script dependency scanning
 
@@ -77,8 +87,9 @@ tests/IndustrialSecureApi.Tests/
 - Configura JWT Bearer Authentication
 - Configura FluentValidation per validazione input
 - Configura Rate Limiting (10 req/min per IP)
+- Configura Swagger/OpenAPI con documentazione XML
 - Registra i servizi custom (JwtService, TotpService)
-- Definisce tutti gli endpoint API
+- Definisce tutti gli endpoint API con documentazione
 - Esegue il seed dei ruoli all'avvio
 - Configura middleware per logging errori
 
@@ -843,6 +854,31 @@ Il metodo `SaveChangesAsync` è sovrascritto per tracciare automaticamente tutte
 2. Esegui: `.\scripts\audit.ps1` (PowerShell) o `./scripts/audit.sh` (Bash)
 3. Verifica manuale: `dotnet list package --vulnerable --include-transitive`
 
+### Voglio vedere la configurazione Infrastructure as Code
+
+1. Terraform files → `infra/` (root del repository)
+2. Key Vault → `infra/keyvault.tf`
+3. Secrets → `infra/secrets.tf`
+4. Managed Identity → `infra/managed-identity.tf`
+5. Documentazione → `infra/README-IaC.md`
+
+### Voglio vedere la documentazione API
+
+1. Swagger UI → `http://localhost:5000` (in Development)
+2. Configurazione Swagger → `program.cs` (cerca `AddSwaggerGen`)
+3. Documentazione endpoint → `program.cs` (cerca `.WithSummary`, `.WithDescription`)
+4. CHANGELOG → `CHANGELOG.md` (root)
+5. Security Controls → Sezione "Security Controls" in questa documentazione
+
+### Voglio creare un release
+
+1. Release workflow → `.github/workflows/release.yml`
+2. Aggiorna CHANGELOG → `CHANGELOG.md`
+3. Crea tag → `git tag -a v1.0.0 -m "Release v1.0.0"`
+4. Push tag → `git push origin v1.0.0`
+5. Monitora → GitHub Actions → Release workflow
+6. Verifica → GitHub Releases per vedere SBOM e Docker image
+
 ---
 
 ## Architettura a Livelli
@@ -1244,6 +1280,325 @@ dotnet list package --outdated --include-transitive
 
 ---
 
+## Infrastructure as Code (Terraform)
+
+### Struttura Terraform
+
+Il progetto include configurazione Terraform per creare l'infrastruttura Azure necessaria per l'applicazione in produzione.
+
+**File Principali:**
+- `infra/main.tf`: Provider Azure e configurazione base, Resource Group
+- `infra/keyvault.tf`: Azure Key Vault con soft delete e purge protection
+- `infra/secrets.tf`: Secrets nel Key Vault (connection string, JWT key, issuer, audience)
+- `infra/managed-identity.tf`: User Assigned Managed Identity per accesso senza password
+- `infra/variables.tf`: Variabili configurabili
+- `infra/outputs.tf`: Output values (Key Vault URI, Managed Identity ID, etc.)
+- `infra/terraform.tfvars.example`: Template di configurazione
+- `infra/README-IaC.md`: Documentazione completa IaC
+
+### Risorse Create
+
+**Azure Key Vault:**
+- Storage sicuro per tutti i secrets
+- Soft delete abilitato (7 giorni retention)
+- Purge protection abilitato
+- Network ACLs configurate
+
+**User Assigned Managed Identity:**
+- Identità gestita per accesso senza password
+- Può essere assegnata a Container Apps, App Service, AKS, etc.
+- Access policy configurata per leggere secrets dal Key Vault
+
+**Secrets:**
+- `DatabaseConnectionString`: Connection string PostgreSQL
+- `JwtKey`: Chiave segreta per JWT (minimo 32 caratteri)
+- `JwtIssuer`: JWT Issuer
+- `JwtAudience`: JWT Audience
+
+### Come Funziona
+
+**1. Setup Iniziale:**
+- Copia `terraform.tfvars.example` come `terraform.tfvars`
+- Inserisci i valori reali (NON committare `terraform.tfvars`)
+- Esegui `terraform init` per inizializzare
+- Esegui `terraform plan` per vedere cosa verrà creato
+- Esegui `terraform apply` per creare le risorse
+
+**2. Managed Identity:**
+- La Managed Identity viene creata automaticamente
+- Viene configurata un access policy sul Key Vault per permettere alla Managed Identity di leggere secrets
+- L'applicazione può usare `DefaultAzureCredential` per accedere al Key Vault senza password
+
+**3. Accesso da .NET:**
+- L'applicazione usa `Azure.Identity.DefaultAzureCredential`
+- Automaticamente rileva la Managed Identity quando deployata su Azure
+- Accede al Key Vault usando l'identità, senza necessità di connection strings o password hardcoded
+
+### Flussi di Esecuzione
+
+#### Creazione Infrastruttura
+
+1. **Preparazione**: Copia `terraform.tfvars.example` e configura valori
+2. **Inizializzazione**: `terraform init` scarica provider Azure
+3. **Pianificazione**: `terraform plan` mostra cosa verrà creato
+4. **Applicazione**: `terraform apply` crea le risorse Azure
+5. **Output**: Terraform mostra URI Key Vault e Managed Identity ID
+
+#### Utilizzo in Produzione
+
+1. **Deploy Applicazione**: Assegna Managed Identity all'app (Container Apps, App Service, etc.)
+2. **Configurazione**: L'app usa `DefaultAzureCredential` per accedere al Key Vault
+3. **Accesso Secrets**: L'app legge secrets dal Key Vault usando Managed Identity
+4. **Nessuna Password**: Nessuna password o connection string hardcoded nel codice
+
+### Sicurezza
+
+**Best Practices Implementate:**
+- Soft delete su Key Vault (7 giorni retention)
+- Purge protection per prevenire eliminazione accidentale
+- Network ACLs configurate (default deny, bypass per Azure Services)
+- Secrets marcati come `sensitive` in Terraform
+- `terraform.tfvars` escluso da Git (non committato)
+- Managed Identity invece di password hardcoded
+
+### Gestione Secrets
+
+**Aggiungere Nuovo Secret:**
+1. Aggiungi risorsa in `secrets.tf`
+2. Aggiungi variabile in `variables.tf`
+3. Aggiungi valore in `terraform.tfvars`
+4. Esegui `terraform apply`
+
+**Aggiornare Secret:**
+1. Modifica valore in `terraform.tfvars`
+2. Esegui `terraform apply`
+
+**Rimuovere Secret:**
+1. Rimuovi risorsa da `secrets.tf`
+2. Esegui `terraform apply`
+
+### Integrazione CI/CD
+
+Il job `infrastructure-plan` in `.github/workflows/ci.yml` esegue `terraform plan` su ogni Pull Request per verificare le modifiche all'infrastruttura senza applicarle.
+
+### Percorsi di Navigazione - Infrastructure as Code
+
+#### Voglio vedere la configurazione Terraform
+
+1. File principali → `infra/` (root del repository)
+2. Key Vault → `infra/keyvault.tf`
+3. Secrets → `infra/secrets.tf`
+4. Managed Identity → `infra/managed-identity.tf`
+5. Variabili → `infra/variables.tf`
+6. Output → `infra/outputs.tf`
+
+#### Voglio creare/modificare l'infrastruttura
+
+1. Configurazione → `infra/terraform.tfvars` (non committato)
+2. Template → `infra/terraform.tfvars.example`
+3. Documentazione → `infra/README-IaC.md`
+4. Comandi: `terraform init`, `terraform plan`, `terraform apply`
+
+#### Voglio vedere come l'app accede ai secrets
+
+1. Configurazione Key Vault → `infra/keyvault.tf`
+2. Access policy → cerca `azurerm_key_vault_access_policy` in `keyvault.tf`
+3. Managed Identity → `infra/managed-identity.tf`
+4. Utilizzo in .NET → cerca `DefaultAzureCredential` e `AddAzureKeyVault` in `program.cs` (da implementare)
+
+---
+
+## API Documentation (Swagger/OpenAPI)
+
+### Configurazione Swagger
+
+Il progetto include Swagger/OpenAPI con documentazione completa degli endpoint.
+
+**Configurazione:**
+- Swagger configurato in `program.cs` con `AddSwaggerGen`
+- Include documentazione XML dai commenti
+- Configurazione JWT Bearer Authentication per testare endpoint protetti
+- Swagger UI disponibile solo in ambiente Development
+
+**Accesso:**
+- Swagger UI: `http://localhost:5000` o `https://localhost:5001` (in Development)
+- OpenAPI JSON: `http://localhost:5000/swagger/v1/swagger.json`
+
+**Caratteristiche:**
+- Documentazione automatica di tutti gli endpoint
+- Esempi di request/response
+- Test interattivo degli endpoint direttamente dal browser
+- Supporto per autenticazione JWT Bearer (inserisci token nel campo Authorization)
+
+**Documentazione Endpoint:**
+Gli endpoint sono documentati usando i metodi di estensione delle Minimal API:
+- `.WithSummary()`: Breve descrizione dell'endpoint
+- `.WithDescription()`: Descrizione dettagliata
+- `.WithTags()`: Categorizzazione endpoint
+- `.Produces()`: Codici di risposta possibili
+
+**Percorso:** Configurazione in `program.cs` (cerca `AddSwaggerGen` e `UseSwagger`)
+
+---
+
+## Security Controls - OWASP Top 10 Mapping
+
+### A01:2021 - Broken Access Control
+
+**Implementato:**
+- RBAC con ruoli Operator e Manager
+- JWT Bearer Authentication con validazione token
+- Endpoint protetti con `RequireAuthorization`
+- Refresh token con revoca
+- Policy di autorizzazione basate su ruoli
+
+**Dove:**
+- Configurazione ruoli → `Infrastructure/Seeders/DataSeeder.cs`
+- Autorizzazione endpoint → `program.cs` (cerca `RequireAuthorization`)
+- JWT validation → `program.cs` (cerca `AddJwtBearer`)
+
+### A02:2021 - Cryptographic Failures
+
+**Implementato:**
+- Password hashing con ASP.NET Core Identity (PBKDF2)
+- JWT con chiave segreta configurata (minimo 32 caratteri)
+- Secrets in Azure Key Vault (non hardcoded)
+- HTTPS enforcement (in produzione)
+- Managed Identity per accesso senza password
+
+**Dove:**
+- Password hashing → ASP.NET Core Identity (automatico)
+- JWT configuration → `appsettings.json` e `program.cs`
+- Key Vault → `infra/keyvault.tf` e `infra/secrets.tf`
+
+### A03:2021 - Injection
+
+**Implementato:**
+- EF Core con parameterized queries (previene SQL injection)
+- FluentValidation per input validation
+- Row-Level Security su PostgreSQL per audit trail
+- Validazione tipo-safe con C# strong typing
+
+**Dove:**
+- EF Core → `Infrastructure/Data/ApplicationDbContext.cs`
+- Validazione input → `Features/*/Validators/`
+- RLS → Migrations SQL
+
+### A04:2021 - Insecure Design
+
+**Implementato:**
+- Audit trail immutabile (Row-Level Security)
+- Rate limiting per prevenire abusi
+- 2FA con TOTP
+- Separazione concerns (Features-based architecture)
+- Dependency scanning automatico
+
+**Dove:**
+- Audit trail → `ApplicationDbContext.SaveChangesAsync` override
+- Rate limiting → `program.cs` (cerca `UseIpRateLimiting`)
+- 2FA → `Features/Auth/Services/Implementations/TotpService.cs`
+
+### A05:2021 - Security Misconfiguration
+
+**Implementato:**
+- User non-root nel container Docker
+- Secrets management con Azure Key Vault
+- Managed Identity (no password hardcoded)
+- Dependency scanning automatico
+- Environment-specific configuration
+
+**Dove:**
+- Docker user → `src/IndustrialSecureApi/Dockerfile`
+- Key Vault → `infra/` (Terraform)
+- Dependency scan → `scripts/audit.ps1`
+
+### A06:2021 - Vulnerable and Outdated Components
+
+**Implementato:**
+- Dependency audit script (blocca build se HIGH)
+- Dependabot per aggiornamenti automatici
+- Trivy scan per vulnerabilità container
+- CodeQL per SAST
+- Monitoring continuo vulnerabilità
+
+**Dove:**
+- Dependency audit → `scripts/audit.ps1`
+- CI/CD scans → `.github/workflows/trivy.yml` e `.github/workflows/codeql.yml`
+- Dependabot → `.github/dependabot.yml`
+
+### A07:2021 - Identification and Authentication Failures
+
+**Implementato:**
+- ASP.NET Core Identity con password policy
+- JWT con expiration e refresh tokens
+- TOTP per 2FA
+- Account lockout su tentativi falliti
+- Password requirements configurate
+
+**Dove:**
+- Identity configuration → `program.cs` (cerca `AddIdentity`)
+- JWT → `Features/Auth/Services/Implementations/JwtService.cs`
+- TOTP → `Features/Auth/Services/Implementations/TotpService.cs`
+
+### A08:2021 - Software and Data Integrity Failures
+
+**Implementato:**
+- CI/CD pipeline con test automatici
+- Immutabilità audit trail (Row-Level Security)
+- Versioning semantico (CHANGELOG.md)
+- State management Terraform
+
+**Dove:**
+- CI/CD → `.github/workflows/ci.yml`
+- Audit immutability → PostgreSQL RLS policies
+- Versioning → `CHANGELOG.md`
+
+### A09:2021 - Security Logging and Monitoring Failures
+
+**Implementato:**
+- Serilog con logging strutturato
+- Error logging middleware (4xx/5xx)
+- Audit trail completo di tutte le operazioni
+- Logging su Seq per analisi
+- Logging su file con rotazione
+
+**Dove:**
+- Serilog config → `program.cs` (inizio file)
+- Error middleware → `Infrastructure/Middleware/ErrorLoggingMiddleware.cs`
+- Audit trail → `ApplicationDbContext.SaveChangesAsync`
+
+### A10:2021 - Server-Side Request Forgery (SSRF)
+
+**Implementato:**
+- Validazione input con FluentValidation
+- Rate limiting per prevenire abusi
+- Nessuna funzionalità che accetta URL esterni
+- Validazione tipo-safe
+
+**Dove:**
+- Input validation → `Features/*/Validators/`
+- Rate limiting → `program.cs` (cerca `UseIpRateLimiting`)
+
+---
+
+## Changelog
+
+Il progetto include un `CHANGELOG.md` che documenta tutti i cambiamenti notevoli seguendo il formato [Keep a Changelog](https://keepachangelog.com/) e [Semantic Versioning](https://semver.org/).
+
+**Formato:**
+- `Added`: Nuove funzionalità
+- `Changed`: Modifiche a funzionalità esistenti
+- `Deprecated`: Funzionalità che verranno rimosse
+- `Removed`: Funzionalità rimosse
+- `Fixed`: Bug fixes
+- `Security`: Vulnerabilità risolte
+
+**Percorso:** `CHANGELOG.md` (root del repository)
+
+**Versione Corrente:** 1.2.0 (Release Workflow Implemented)
+
+---
+
 ## Prossimi Sviluppi
 
 ### Endpoint da Completare
@@ -1285,11 +1640,36 @@ dotnet list package --outdated --include-transitive
 
 ### Security da Completare
 - ✅ Vulnerabilità HIGH risolte
+- ✅ Infrastructure as Code con Terraform implementato
+- ✅ Azure Key Vault e Managed Identity configurati
 - ⚠️ Risolvere vulnerabilità Moderate (JWT packages)
 - ⚠️ Implementare token blacklist con Redis
-- ⚠️ Configurare secrets management per produzione (Azure Key Vault, etc.)
+- ⚠️ Integrare Azure Key Vault in applicazione .NET (DefaultAzureCredential)
+
+### Infrastructure da Completare
+- ✅ Terraform configuration implementata
+- ✅ Azure Key Vault e Managed Identity definiti
+- ⚠️ Integrare Key Vault in applicazione (AddAzureKeyVault in program.cs)
+- ⚠️ Configurare Azure Container Apps con Managed Identity
+- ⚠️ Testare deploy completo su Azure
+
+### Documentazione da Completare
+- ✅ Swagger/OpenAPI implementato
+- ✅ Security Controls (OWASP Top 10) documentati
+- ✅ CHANGELOG.md creato
+- ✅ Release workflow implementato
+- ✅ SBOM generation (CycloneDX) implementato
+- ⚠️ Aggiungere più esempi di request/response in Swagger
+- ⚠️ Documentare tutti gli endpoint con commenti XML
+
+### Release da Completare
+- ✅ Release workflow GitHub Actions implementato
+- ✅ SBOM generation con CycloneDX
+- ✅ Docker image publishing su GHCR
+- ⚠️ Testare processo completo di release
+- ⚠️ Configurare automatic release notes da CHANGELOG
 
 ---
 
 **Ultimo aggiornamento:** Dicembre 2024  
-**Versione:** 0.9.0 (Docker & Dependency Scanning Implemented)
+**Versione:** 1.2.0 (Release Workflow Implemented)

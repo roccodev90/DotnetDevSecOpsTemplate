@@ -1,121 +1,89 @@
-# Industrial Secure API
+# DotnetDevSecOpsTemplate
 
-Minimal REST API per la gestione di sensori industriali (temperatura, pressione) con autenticazione a 2 fattori, autorizzazione RBAC, audit trail immutabile e pipeline DevSecOps.
+Template .NET 8 con pipeline DevSecOps integrata (CI/CD, SAST, SCA, aggiornamenti automatici).
 
-## 🚀 Quick Start
+## Badges
 
-### Prerequisiti
-- .NET 8 SDK
-- PostgreSQL 16+ (locale o Docker)
-- Docker Desktop (opzionale, per container PostgreSQL)
+[![CI](https://github.com/roccodev90/DotnetDevSecOpsTemplate/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/roccodev90/DotnetDevSecOpsTemplate/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/roccodev90/DotnetDevSecOpsTemplate/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/roccodev90/DotnetDevSecOpsTemplate/actions/workflows/codeql.yml)
+[![Security scan](https://github.com/roccodev90/DotnetDevSecOpsTemplate/actions/workflows/trivy.yml/badge.svg?branch=main)](https://github.com/roccodev90/DotnetDevSecOpsTemplate/actions/workflows/trivy.yml)
+[![Dependabot](https://img.shields.io/badge/dependencies-up%20to%20date-brightgreen.svg)](https://github.com/roccodev90/DotnetDevSecOpsTemplate/security/dependabot)
 
-### Setup Database
+---
 
-#### Opzione 1: Docker (Raccomandato per sviluppo)
-```bash
-# Dalla root del progetto
-docker-compose up -d postgres
-```
+## Progetto: Industrial Secure API
 
-#### Opzione 2: PostgreSQL Locale
-1. Crea il database `industrial_secure` in PostgreSQL
-2. Aggiorna `appsettings.json` con le credenziali corrette
+REST API minimal per la gestione di sensori industriali con autenticazione a 2 fattori, autorizzazione RBAC, audit trail immutabile e pipeline DevSecOps completa.
 
-### Eseguire Migrations
+### Caratteristiche Implementate
 
-#### Metodo 1: EF Core CLI
-```bash
-cd src/IndustrialSecureApi
-dotnet ef database update
-```
+**Autenticazione e Autorizzazione:**
+- ASP.NET Core Identity con supporto ruoli (Operator, Manager)
+- Autenticazione JWT Bearer con access token e refresh token
+- TOTP (Time-based One-Time Password) per 2FA
+- RBAC (Role-Based Access Control)
 
-#### Metodo 2: Script SQL Manuale
-1. Genera lo script: `dotnet ef migrations script --output migration.sql`
-2. Esegui lo script in pgAdmin4 o psql
+**Sicurezza:**
+- Input validation con FluentValidation
+- Rate limiting (10 richieste/minuto per IP)
+- Audit trail immutabile con Row-Level Security su PostgreSQL
+- Dependency scanning automatico (fallisce build se vulnerabilità HIGH)
+- Scansioni sicurezza: Trivy (container + filesystem), CodeQL (SAST)
 
-### Avviare l'Applicazione
-```bash
-cd src/IndustrialSecureApi
-dotnet run
-```
+**Infrastruttura:**
+- Database PostgreSQL 16 con EF Core
+- Docker multi-stage build (sdk:8.0 → aspnet:8.0-alpine)
+- Docker Compose con orchestrazione completa (app, postgres, redis, seq)
+- User non-root nel container (UID 1000)
 
-L'API sarà disponibile su `https://localhost:5001` o `http://localhost:5000`
+**Logging e Monitoring:**
+- Serilog con sink multipli (Console, File JSON, Seq)
+- Error logging middleware automatico per 4xx/5xx
+- Logging strutturato con rotazione giornaliera
 
-## 📋 Caratteristiche
+**Testing:**
+- Test unitari (validatori, servizi JWT/TOTP)
+- Test di integrazione con WebApplicationFactory
+- Database in-memory per test
+- Coverage reporting
 
-- ✅ **Database PostgreSQL** con EF Core
-- ✅ **Row-Level Security** su AuditLogs (immutabile)
-- ✅ **ASP.NET Core Identity** per autenticazione
-- ✅ **Modelli Sensori** (Temperature, Pressure)
-- ✅ **Audit Trail** completo
+**CI/CD:**
+- GitHub Actions pipeline completa
+- Build automatico su push/PR
+- Test con coverage
+- Security scanning (Trivy, CodeQL)
+- Dependency audit (blocca build se vulnerabilità HIGH)
+- Docker image build e publish su GitHub Container Registry
 
-## 🔧 Configurazione
 
-### Connection String
-Modifica `appsettings.json`:
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Port=5432;Database=industrial_secure;Username=postgres;Password=YOUR_PASSWORD"
-  }
-}
-```
+### Struttura Progetto
 
-### Docker Compose
-Il container PostgreSQL è configurato sulla porta **5433** per evitare conflitti con PostgreSQL locale.
+src/IndustrialSecureApi/
+├── Features/                    # Funzionalità business
+│   ├── Auth/                   # Autenticazione e autorizzazione
+│   │   ├── Dtos/               # Data Transfer Objects
+│   │   └── Services/            # Servizi (JWT, TOTP)
+│   └── Sensors/                # Feature sensori
+│       ├── Dtos/
+│       └── Validators/          # Validatori FluentValidation
+├── Infrastructure/
+│   ├── Data/                   # ApplicationDbContext
+│   ├── Models/                 # Modelli dominio e Identity
+│   ├── Middleware/             # Middleware custom
+│   └── Seeders/                # Inizializzazione dati
+├── Dockerfile                  # Multi-stage Docker build
+└── program.cs                  # Entry point
 
-## 📚 Documentazione Completa
+tests/IndustrialSecureApi.Tests/
+├── Unit/                       # Test unitari
+└── Integration/                # Test di integrazione
 
-Vedi [Documentazione Tecnica Completa](../../docs/INDUSTRIAL_SECURE_API_DOCUMENTATION.md) per dettagli approfonditi.
+scripts/
+└── audit.ps1                   # Script dependency scanning
 
-## 🏗 Struttura Progetto
+.github/workflows/
+├── ci.yml                      # CI pipeline (build, test, scan)
+├── codeql.yml                  # CodeQL SAST
+└── trivy.yml                   # Trivy security scan
 
-```
-IndustrialSecureApi/
-├── Data/              # DbContext e Interceptors
-├── Models/            # Entità (Sensor, SensorReading, AuditLog)
-├── DTOs/              # Data Transfer Objects
-├── Services/          # Business Logic (TOTP, JWT, Sensors)
-├── Middleware/        # Audit Middleware
-├── Extensions/        # Extension Methods
-└── Migrations/        # EF Core Migrations
-```
-
-## 🔒 Sicurezza
-
-- **Row-Level Security** abilitato su `AuditLogs`
-- Policy `audit_immutable` blocca tutte le operazioni
-- Audit trail immutabile a livello database
-
-## 📦 Dipendenze Principali
-
-- .NET 8.0
-- Entity Framework Core 8.0
-- Npgsql.EntityFrameworkCore.PostgreSQL 8.0
-- ASP.NET Core Identity 8.0
-- JWT Bearer Authentication 8.0
-- Otp.NET 1.3.0
-- Serilog.AspNetCore 8.0
-
-## 🚧 Stato Implementazione
-
-Vedi la [documentazione completa](../../docs/INDUSTRIAL_SECURE_API_DOCUMENTATION.md#stato-dellimplementazione) per lo stato dettagliato.
-
-**Completato:**
-- ✅ Struttura progetto
-- ✅ Database e migrations
-- ✅ Row-Level Security
-- ✅ Modelli dati
-
-**In sviluppo:**
-- 🚧 Autenticazione 2FA
-- 🚧 JWT tokens
-- 🚧 RBAC
-- 🚧 API endpoints
-
-## 📝 Note
-
-- Il database può essere creato in PostgreSQL locale (porta 5432) o Docker (porta 5433)
-- Le migrations possono essere eseguite via EF Core CLI o script SQL manuale
-- Row-Level Security su AuditLogs rende la tabella immutabile a livello database
 

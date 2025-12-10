@@ -40,6 +40,21 @@ appsettings.json
 # Documentation
 docs/
 
+# Terraform
+*.tfstate #file di stato Terraform (contengono dati sensibili)
+*.tfstate.*
+*.tfvars # file con valori reali (contiene secrets, non committare)
+.terraform/
+.terraform.lock.hcl #lock file delle versioni provider
+crash.log #log di crash Terraform
+crash.*.log
+override.tf #file override (solitamente locali)
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc # file di configurazione locale
+terraform.rc
+
 # Others
 
-*.DS_Store
+*.DS_Store 
